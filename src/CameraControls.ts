@@ -498,6 +498,7 @@ export class CameraControls extends EventDispatcher {
 					clientY: event.clientY,
 					deltaX: 0,
 					deltaY: 0,
+					shiftKey: event.shiftKey
 				};
 				this._activePointers.push( pointer );
 
@@ -522,6 +523,7 @@ export class CameraControls extends EventDispatcher {
 					clientY: event.clientY,
 					deltaX: 0,
 					deltaY: 0,
+					shiftKey: event.shiftKey
 				};
 				this._activePointers.push( pointer );
 
@@ -608,7 +610,16 @@ export class CameraControls extends EventDispatcher {
 
 					if ( ( event.buttons & MOUSE_BUTTON.LEFT ) === MOUSE_BUTTON.LEFT ) {
 
-						this._state = this._state | this.mouseButtons.left;
+						if ( event.shiftKey ) {
+
+							this._state = this._state | this.mouseButtons.right;
+
+						} else {
+
+							this._state = this._state | this.mouseButtons.left;
+
+						}
+
 
 					}
 
