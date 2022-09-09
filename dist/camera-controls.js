@@ -587,6 +587,7 @@
 	                    this._state = 0;
 	                    if ((event.buttons & MOUSE_BUTTON.LEFT) === MOUSE_BUTTON.LEFT) {
 	                        if (event.shiftKey) {
+	                            // treat shift+left-click like right-click.
 	                            this._state = this._state | this.mouseButtons.right;
 	                        }
 	                        else {
