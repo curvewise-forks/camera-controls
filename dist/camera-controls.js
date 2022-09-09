@@ -508,6 +508,7 @@
 	                    clientY: event.clientY,
 	                    deltaX: 0,
 	                    deltaY: 0,
+	                    shiftKey: event.shiftKey
 	                };
 	                this._activePointers.push(pointer);
 	                // eslint-disable-next-line no-undef
@@ -526,6 +527,7 @@
 	                    clientY: event.clientY,
 	                    deltaX: 0,
 	                    deltaY: 0,
+	                    shiftKey: event.shiftKey
 	                };
 	                this._activePointers.push(pointer);
 	                // see https://github.com/microsoft/TypeScript/issues/32912#issuecomment-522142969
@@ -584,7 +586,13 @@
 	                else {
 	                    this._state = 0;
 	                    if ((event.buttons & MOUSE_BUTTON.LEFT) === MOUSE_BUTTON.LEFT) {
-	                        this._state = this._state | this.mouseButtons.left;
+	                        if (event.shiftKey) {
+	                            // treat shift+left-click like right-click.
+	                            this._state = this._state | this.mouseButtons.right;
+	                        }
+	                        else {
+	                            this._state = this._state | this.mouseButtons.left;
+	                        }
 	                    }
 	                    if ((event.buttons & MOUSE_BUTTON.MIDDLE) === MOUSE_BUTTON.MIDDLE) {
 	                        this._state = this._state | this.mouseButtons.middle;
