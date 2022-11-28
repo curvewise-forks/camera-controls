@@ -1007,6 +1007,7 @@ export class CameraControls extends EventDispatcher {
 					const dollyY = this.dollyToCursor ? ( lastDragPosition.y - this._elementRect.y ) / this._elementRect.height * - 2 + 1 : 0;
 
 					this._state === ACTION.TOUCH_DOLLY ||
+					this._state === ACTION.TOUCH_DOLLY_ROTATE ||
 					this._state === ACTION.TOUCH_DOLLY_TRUCK ||
 					this._state === ACTION.TOUCH_DOLLY_OFFSET ?
 						this._dollyInternal( dollyDelta * TOUCH_DOLLY_FACTOR, dollyX, dollyY ) :
@@ -1634,7 +1635,7 @@ export class CameraControls extends EventDispatcher {
 		paddingTop = 0
 	}: Partial<FitToOptions> = {} ): Promise<void[]> {
 
-		const promises = [];
+		const promises: Promise<void>[] = [];
 		const aabb = ( box3OrObject as _THREE.Box3 ).isBox3
 			? _box3A.copy( box3OrObject as _THREE.Box3 )
 			: _box3A.setFromObject( box3OrObject as _THREE.Object3D );
@@ -1748,7 +1749,7 @@ export class CameraControls extends EventDispatcher {
 	 */
 	fitToSphere( sphereOrMesh: _THREE.Sphere | _THREE.Object3D, enableTransition: boolean ): Promise<void[]> {
 
-		const promises = [];
+		const promises: Promise<void>[] = [];
 		const isSphere = sphereOrMesh instanceof THREE.Sphere;
 		const boundingSphere = isSphere ?
 			_sphere.copy( sphereOrMesh as _THREE.Sphere ) :
@@ -1961,6 +1962,7 @@ export class CameraControls extends EventDispatcher {
 
 	/**
 	 * Set orbit point without moving the camera.
+	 * SHOULD NOT RUN DURING ANIMATIONS. `setOrbitPoint()` will immediately fix the positions.
 	 * @param targetX
 	 * @param targetY
 	 * @param targetZ
@@ -1968,6 +1970,7 @@ export class CameraControls extends EventDispatcher {
 	 */
 	setOrbitPoint( targetX: number, targetY: number, targetZ : number ) {
 
+		this._camera.updateMatrixWorld();
 		_xColumn.setFromMatrixColumn( this._camera.matrixWorldInverse, 0 );
 		_yColumn.setFromMatrixColumn( this._camera.matrixWorldInverse, 1 );
 		_zColumn.setFromMatrixColumn( this._camera.matrixWorldInverse, 2 );
@@ -2163,9 +2166,10 @@ export class CameraControls extends EventDispatcher {
 	 */
 	saveState(): void {
 
-		this._target0.copy( this._target );
-		this._position0.copy( this._camera.position );
+		this.getTarget( this._target0 );
+		this.getPosition( this._position0 );
 		this._zoom0 = this._zoom;
+		this._focalOffset0.copy( this._focalOffset );
 
 	}
 
@@ -2250,35 +2254,47 @@ export class CameraControls extends EventDispatcher {
 					.add( planeX.multiplyScalar( this._dollyControlCoord.x * worldToScreen * camera.aspect ) )
 					.add( planeY.multiplyScalar( this._dollyControlCoord.y * worldToScreen ) );
 				this._targetEnd.lerp( cursor, lerpRatio );
-				this._target.copy( this._targetEnd );
-
-				// target position may be moved beyond boundary.
-				this._boundary.clampPoint( this._targetEnd, this._targetEnd );
 
 			} else if ( isOrthographicCamera( this._camera ) ) {
 
 				const camera = this._camera;
+
+				// calc the "distance" of Plane given a point and normal vector
+				// https://www.maplesoft.com/support/help/maple/view.aspx?path=MathApps%2FEquationOfAPlaneNormal#bkmrk0
+				const cameraDirection = camera.getWorldDirection( _v3A.clone() );
+				const prevPlaneConstant = (
+					this._targetEnd.x * cameraDirection.x +
+					this._targetEnd.y * cameraDirection.y +
+					this._targetEnd.z * cameraDirection.z
+				);
 
 				const worldPosition = _v3A.set(
 					this._dollyControlCoord.x,
 					this._dollyControlCoord.y,
 					( camera.near + camera.far ) / ( camera.near - camera.far )
 				).unproject( camera );
-
 				const quaternion = _v3B.set( 0, 0, - 1 ).applyQuaternion( camera.quaternion );
+				const cursor = _v3C.copy( worldPosition ).add( quaternion.multiplyScalar( - worldPosition.dot( camera.up ) ) );
+				const prevZoom = this._zoom - this._dollyControlAmount;
+				const lerpRatio = - ( prevZoom - this._zoomEnd ) / this._zoom;
 
-				const divisor = quaternion.dot( camera.up );
-				const distance = approxZero( divisor ) ? - worldPosition.dot( camera.up ) : - worldPosition.dot( camera.up ) / divisor;
-				const cursor = _v3C.copy( worldPosition ).add( quaternion.multiplyScalar( distance ) );
+				this._targetEnd.lerp( cursor, lerpRatio );
 
-				this._targetEnd.lerp( cursor, 1 - camera.zoom / this._dollyControlAmount );
-				this._target.copy( this._targetEnd );
+				const newPlaneConstant = (
+					this._targetEnd.x * cameraDirection.x +
+					this._targetEnd.y * cameraDirection.y +
+					this._targetEnd.z * cameraDirection.z
+				);
 
-				// target position may be moved beyond boundary.
-				this._boundary.clampPoint( this._targetEnd, this._targetEnd );
+				// Pull back the camera depth that has moved. the camera is stationary as zoom
+				const pullBack = cameraDirection.multiplyScalar( newPlaneConstant - prevPlaneConstant );
+				this._targetEnd.sub( pullBack );
 
 			}
 
+			this._target.copy( this._targetEnd );
+			// target position may be moved beyond boundary.
+			this._boundary.clampPoint( this._targetEnd, this._targetEnd );
 			this._dollyControlAmount = 0;
 
 		}
@@ -2660,14 +2676,14 @@ export class CameraControls extends EventDispatcher {
 	protected _zoomInternal = ( delta: number, x: number, y: number ): void => {
 
 		const zoomScale = Math.pow( 0.95, delta * this.dollySpeed );
+		const prevZoom = this._zoomEnd;
 
 		// for both PerspectiveCamera and OrthographicCamera
 		this.zoomTo( this._zoom * zoomScale );
 
 		if ( this.dollyToCursor ) {
 
-			this._dollyControlAmount = this._zoomEnd;
-
+			this._dollyControlAmount += this._zoomEnd - prevZoom;
 			this._dollyControlCoord.set( x, y );
 
 		}
